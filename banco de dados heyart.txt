@@ -1,0 +1,182 @@
+CREATE DATABASE heyart;
+USE heyart;
+
+CREATE TABLE usuarios (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) UNIQUE,
+    nome VARCHAR(100),
+    sobrenome VARCHAR(100),
+    email VARCHAR(100) UNIQUE,
+    senha_hash VARCHAR(255),
+    nivel_acesso ENUM('usuario', 'admin') DEFAULT 'usuario'
+);
+
+CREATE VIEW admins AS
+SELECT id, username, nome, sobrenome, email
+FROM usuarios
+WHERE nivel_acesso = 'admin';
+
+CREATE TABLE categorias (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nome VARCHAR(50) UNIQUE
+);
+
+INSERT INTO categorias (nome) VALUES
+('Surrealismo'), ('Cartoon'), ('Anime/Mangá'), ('Pixel'), ('Expressionismo');
+
+CREATE TABLE filtros (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nome VARCHAR(50) UNIQUE
+);
+
+INSERT INTO filtros (nome) VALUES
+('Sombreamento'), ('Iluminação'), ('Digital'), ('Textura');
+
+CREATE TABLE conteudos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    titulo VARCHAR(150),
+    tipo ENUM('pdf', 'imagem'),
+    link_conteudo TEXT,
+    usuario_id INT,
+    categoria_id INT,
+    data_postagem DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
+    FOREIGN KEY (categoria_id) REFERENCES categorias(id)
+);
+
+CREATE TABLE videos_admin (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    titulo VARCHAR(150),
+    link_youtube TEXT,
+    categoria_id INT,
+    admin_id INT,
+    data_postagem DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (categoria_id) REFERENCES categorias(id),
+    FOREIGN KEY (admin_id) REFERENCES usuarios(id),
+    CHECK (
+        link_youtube LIKE 'https://www.youtube.com/%' OR
+        link_youtube LIKE 'https://youtu.be/%'
+    )
+);
+
+CREATE TABLE conteudo_filtros (
+    conteudo_id INT,
+    filtro_id INT,
+    FOREIGN KEY (conteudo_id) REFERENCES conteudos(id) ON DELETE CASCADE,
+    FOREIGN KEY (filtro_id) REFERENCES filtros(id) ON DELETE CASCADE,
+    PRIMARY KEY (conteudo_id, filtro_id)
+);
+
+CREATE TABLE video_filtros (
+    video_id INT,
+    filtro_id INT,
+    FOREIGN KEY (video_id) REFERENCES videos_admin(id) ON DELETE CASCADE,
+    FOREIGN KEY (filtro_id) REFERENCES filtros(id) ON DELETE CASCADE,
+    PRIMARY KEY (video_id, filtro_id)
+);
+
+CREATE TABLE favoritos (
+    usuario_id INT,
+    conteudo_id INT,
+    data_favorito DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
+    FOREIGN KEY (conteudo_id) REFERENCES conteudos(id),
+    PRIMARY KEY (usuario_id, conteudo_id)
+);
+
+CREATE TABLE curtidas (
+    usuario_id INT,
+    conteudo_id INT,
+    data_curtida DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
+    FOREIGN KEY (conteudo_id) REFERENCES conteudos(id),
+    PRIMARY KEY (usuario_id, conteudo_id)
+);
+
+CREATE TABLE comentarios (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    usuario_id INT,
+    conteudo_id INT,
+    texto TEXT,
+    data_comentario DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
+    FOREIGN KEY (conteudo_id) REFERENCES conteudos(id)
+);
+
+CREATE TABLE personalizacoes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    usuario_id INT UNIQUE,
+    tema ENUM('claro', 'escuro') DEFAULT 'claro',
+    tamanho_fonte ENUM('pequeno', 'normal', 'grande') DEFAULT 'normal',
+    libras_plugin BOOLEAN DEFAULT FALSE,
+    navegacao_teclado BOOLEAN DEFAULT TRUE,
+    FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+);
+
+CREATE VIEW feed_postagens AS
+SELECT 
+    c.id AS id_postagem,
+    c.titulo,
+    c.tipo,
+    c.link_conteudo AS link,
+    c.data_postagem,
+    u.username AS autor,
+    cat.nome AS categoria,
+    GROUP_CONCAT(f.nome SEPARATOR ', ') AS filtros
+FROM conteudos c
+JOIN usuarios u ON c.usuario_id = u.id
+JOIN categorias cat ON c.categoria_id = cat.id
+LEFT JOIN conteudo_filtros cf ON c.id = cf.conteudo_id
+LEFT JOIN filtros f ON cf.filtro_id = f.id
+GROUP BY c.id
+
+UNION
+
+SELECT 
+    v.id AS id_postagem,
+    v.titulo,
+    'video' AS tipo,
+    v.link_youtube AS link,
+    v.data_postagem,
+    u.username AS autor,
+    cat.nome AS categoria,
+    GROUP_CONCAT(fv.nome SEPARATOR ', ') AS filtros
+FROM videos_admin v
+JOIN usuarios u ON v.admin_id = u.id
+JOIN categorias cat ON v.categoria_id = cat.id
+LEFT JOIN video_filtros vf ON v.id = vf.video_id
+LEFT JOIN filtros fv ON vf.filtro_id = fv.id
+GROUP BY v.id;
+
+CREATE VIEW busca_postagens AS
+SELECT 
+    'conteudo' AS origem,
+    c.id AS id_postagem,
+    c.titulo,
+    c.tipo,
+    c.link_conteudo AS link,
+    c.data_postagem,
+    cat.nome AS categoria,
+    GROUP_CONCAT(f.nome SEPARATOR ', ') AS filtros
+FROM conteudos c
+JOIN categorias cat ON c.categoria_id = cat.id
+LEFT JOIN conteudo_filtros cf ON c.id = cf.conteudo_id
+LEFT JOIN filtros f ON cf.filtro_id = f.id
+GROUP BY c.id
+
+UNION
+
+SELECT 
+    'video' AS origem,
+    v.id AS id_postagem,
+    v.titulo,
+    'video' AS tipo,
+    v.link_youtube AS link,
+    v.data_postagem,
+    cat.nome AS categoria,
+    GROUP_CONCAT(fv.nome SEPARATOR ', ') AS filtros
+FROM videos_admin v
+JOIN categorias cat ON v.categoria_id = cat.id
+LEFT JOIN video_filtros vf ON v.id = vf.video_id
+LEFT JOIN filtros fv ON vf.filtro_id = fv.id
+GROUP BY v.id;
